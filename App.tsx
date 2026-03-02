@@ -119,7 +119,7 @@ const App: React.FC = () => {
       sessionRef.current = session;
 
       const source = inputAudioCtxRef.current.createMediaStreamSource(stream);
-      const processor = inputAudioCtxRef.current.createScriptProcessor(4096, 1, 1);
+      const processor = inputAudioCtxRef.current.createScriptProcessor(2048, 1, 1);
       
       processor.onaudioprocess = (e) => {
         // If paused, we stop sending audio so the AI stops "hearing" and generating
