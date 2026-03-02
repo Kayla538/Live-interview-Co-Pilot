@@ -80,12 +80,17 @@ const App: React.FC = () => {
       const sessionPromise = connectLiveSession(experience, {
         onAudioChunk: async (base64) => {
           if (isMuted || !outputAudioCtxRef.current || isPausedRef.current) return;
-          const ctx = outputAudioCtxRef.current;
-          const buffer = await decodeAudioData(decodeBase64(base64), ctx, 24000, 1);
-          const source = ctx.createBufferSource();
-          source.buffer = buffer;
-          source.connect(ctx.destination);
-          source.start();
+          try {
+            const ctx = outputAudioCtxRef.current;
+            if (ctx.state === 'closed') return;
+            const buffer = await decodeAudioData(decodeBase64(base64), ctx, 24000, 1);
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.start();
+          } catch (e) {
+            console.error("Audio playback error:", e);
+          }
         },
         onInterruption: () => {
           if (!isPausedRef.current) {
@@ -123,10 +128,14 @@ const App: React.FC = () => {
       
       processor.onaudioprocess = (e) => {
         // If paused, we stop sending audio so the AI stops "hearing" and generating
-        if (isPausedRef.current) return;
+        if (isPausedRef.current || !sessionRef.current) return;
         
-        const inputData = e.inputBuffer.getChannelData(0);
-        session.sendRealtimeInput({ media: createPcmBlob(inputData) });
+        try {
+          const inputData = e.inputBuffer.getChannelData(0);
+          sessionRef.current.sendRealtimeInput({ media: createPcmBlob(inputData) });
+        } catch (err) {
+          console.error("Audio capture error:", err);
+        }
       };
 
       source.connect(processor);
@@ -142,10 +151,30 @@ const App: React.FC = () => {
   };
 
   const endMeeting = () => {
-    sessionRef.current?.close();
-    mediaStreamRef.current?.getTracks().forEach(t => t.stop());
-    inputAudioCtxRef.current?.close();
-    outputAudioCtxRef.current?.close();
+    if (sessionRef.current) {
+      sessionRef.current.close();
+      sessionRef.current = null;
+    }
+    
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      mediaStreamRef.current = null;
+    }
+
+    if (inputAudioCtxRef.current) {
+      if (inputAudioCtxRef.current.state !== 'closed') {
+        inputAudioCtxRef.current.close().catch(console.error);
+      }
+      inputAudioCtxRef.current = null;
+    }
+
+    if (outputAudioCtxRef.current) {
+      if (outputAudioCtxRef.current.state !== 'closed') {
+        outputAudioCtxRef.current.close().catch(console.error);
+      }
+      outputAudioCtxRef.current = null;
+    }
+
     setIsMeetingActive(false);
     setIsConnecting(false);
     setIsPaused(false);
